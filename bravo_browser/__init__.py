@@ -1,13 +1,17 @@
 from flask import Flask
+from os import getenv
 
 
 def create_app(test_config=None):
-    app = Flask(__name__, instance_relative_config=True)
+    instance_path = getenv('BRAVO_UI_INSTANCE_DIR', 'instance')
+    app = Flask(__name__,
+                instance_relative_config=True,
+                instance_path=instance_path)
 
     if test_config is None:
         app.config.from_object('config.web_default')
         app.config.from_pyfile('web_config.py', silent=True)
-        app.config.from_envvar('BRAVO_BROWSER_CONFIG_FILE', silent=True)
+        app.config.from_envvar('BRAVO_UI_CONFIG_FILE', silent=True)
     else:
         app.config.from_mapping(test_config)
 
