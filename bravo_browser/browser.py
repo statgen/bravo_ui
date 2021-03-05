@@ -5,8 +5,8 @@ from flask_login import LoginManager, UserMixin, current_user, login_user, logou
 import google_auth_oauthlib.flow
 import functools
 import requests
-from webargs import fields, validate
-from webargs.flaskparser import parser, use_kwargs
+from webargs import fields
+from webargs.flaskparser import use_kwargs, use_args
 from datetime import timedelta
 import re
 import json
@@ -238,22 +238,22 @@ search_argmap = {
 
 
 @bp.route('/search', methods = ['GET'])
-@use_kwargs(search_argmap, location='query')
-def search(value, **kwargs):
-    if 'chrom' in kwargs and 'start' in kwargs and 'stop' in kwargs: # suggested gene name
+@use_args(search_argmap, location='query')
+def search(args):
+    if 'chrom' in args and 'start' in args and 'stop' in args: # suggested gene name
         args = {
            'variants_type': 'snv',
-           'gene_name': value
+           'gene_name': args['value']
         }
         return redirect(url_for('.gene_page', **args))
-    elif 'chrom' in kwargs and 'pos' in kwargs and 'ref' in kwargs and 'alt' in kwargs: # suggested snv
+    elif 'chrom' in args and 'pos' in args and 'ref' in args and 'alt' in args: # suggested snv
         args = {
           'variant_type': 'snv',
-          'variant_id': f"{kwargs['chrom']}-{kwargs['pos']}-{kwargs['ref']}-{kwargs['alt']}"
+          'variant_id': f"{args['chrom']}-{args['pos']}-{args['ref']}-{args['alt']}"
         }
         return redirect(url_for('.variant_page', **args))
     else:  # typed value
-        match = _regex_chr_start_end.match(value)
+        match = _regex_chr_start_end.match(args['value'])
         if match is not None:
             args = {
                'variants_type': 'snv',
@@ -262,7 +262,7 @@ def search(value, **kwargs):
                'stop': match.groups()[2]}
             return redirect(url_for('.region_page', **args))
         else:
-            match = _regex_chr_pos_ref_alt.match(value)
+            match = _regex_chr_pos_ref_alt.match(args['value'])
             if match is not None:
                 variant_id = f'{match.groups()[0]}-{match.groups()[1]}-{match.groups()[2]}-{match.groups()[3]}'.upper()
                 if variant_id.startswith('CHR'):
@@ -281,27 +281,27 @@ def search(value, **kwargs):
             else:
                 match = _regex_rsid.match(args['value'])
                 if match is not None:
-                    api_response = requests.get(f"{current_app.config['BRAVO_API_URI']}/snv?variant_id={value}")
+                    api_response = requests.get(f"{current_app.config['BRAVO_API_URI']}/snv?variant_id={args['value']}")
                     if api_response.status_code == 200:
                         payload = api_response.json()
                         if not payload['error']:
                             for variant in payload['data']:
-                                if any(rsid == value for rsid in variant['rsids']):
+                                if any(rsid == args['value'] for rsid in variant['rsids']):
                                     args = {
                                        'variant_type': 'snv',
                                        'variant_id': variant['variant_id']
                                     }
                                     return redirect(url_for('.variant_page', **args))
                 else:
-                    api_response = requests.get(f"{current_app.config['BRAVO_API_URI']}/genes?name={value}")
+                    api_response = requests.get(f"{current_app.config['BRAVO_API_URI']}/genes?name={args['value']}")
                     if api_response.status_code == 200:
                         payload = api_response.json()
                         if not payload['error']:
                             for gene in payload['data']:
-                                if gene['gene_name'].upper() == value.upper():
+                                if gene['gene_name'].upper() == args['value'].upper():
                                     args = {
                                        'variants_type': 'snv',
-                                       'gene_name': value.upper()
+                                       'gene_name': args['value'].upper()
                                     }
                                     return redirect(url_for('.gene_page', **args))
     return redirect(url_for('.not_found', message = f'We coudn\'t find what you wanted.'))
@@ -344,13 +344,15 @@ def variant_page(variant_type, variant_id):
     return render_template('variant.html', show_brand = True, show_signin = current_app.config['GOOGLE_OAUTH_CLIENT_SECRET'] != '', variant_id = variant_id)
 
 
+variant_argmap = {
+    'variant_id': fields.Str(location = 'view_args', required = True, validate = lambda x: len(x) > 0, error_messages = {'validator_failed': 'Value must be a non-empty string.'})
+}
+
+
 @bp.route('/variant/api/snv/<string:variant_id>')
 @require_authorization
+@use_kwargs(variant_argmap, location='view_args')
 def variant(variant_id):
-    arguments = {
-       'variant_id': fields.Str(location = 'view_args', required = True, validate = lambda x: len(x) > 0, error_messages = {'validator_failed': 'Value must be a non-empty string.'})
-    }
-    args = parser.parse(arguments)
     api_response = requests.get(f"{current_app.config['BRAVO_API_URI']}/snv?variant_id={variant_id}&full=1", headers = { 'Accept-Encoding': 'gzip' })
     if api_response.status_code == 200:
         return make_response(api_response.content, 200)
@@ -359,26 +361,25 @@ def variant(variant_id):
 
 @bp.route('/variant/api/snv/cram/summary/<string:variant_id>')
 @require_authorization
+@use_kwargs(variant_argmap, location='view_args')
 def variant_cram_info(variant_id):
-    arguments = {
-       'variant_id': fields.Str(location = 'view_args', required = True, validate = lambda x: len(x) > 0, error_messages = {'validator_failed': 'Value must be a non-empty string.'})
-    }
-    args = parser.parse(arguments)
     api_response = requests.get(f"{current_app.config['BRAVO_API_URI']}/sequence/summary?variant_id={variant_id}")
     if api_response.status_code == 200:
         return make_response(api_response.content, 200)
     return not_found(f'I couldn\'t find what you wanted')
 
 
+variant_cram_argmap = {
+    'variant_id': fields.Str(location = 'view_args', required = True, validate = lambda x: len(x) > 0, error_messages = {'validator_failed': 'Value must be a non-empty string.'}),
+    'sample_het': fields.Bool(location = 'view_args', required = True),
+    'sample_no': fields.Int(location = 'view_args', required = True, validate = lambda x: x > 0, error_messages = {'validator_failed': 'Value must be greater than 0.'})
+}
+
+
 @bp.route('/variant/api/snv/cram/<string:variant_id>-<int:sample_het>-<int:sample_no>')
 @require_authorization
+@use_kwargs(variant_cram_argmap, location='view_args')
 def variant_cram(variant_id, sample_het, sample_no):
-    arguments = {
-       'variant_id': fields.Str(location = 'view_args', required = True, validate = lambda x: len(x) > 0, error_messages = {'validator_failed': 'Value must be a non-empty string.'}),
-       'sample_het': fields.Bool(location = 'view_args', required = True),
-       'sample_no': fields.Int(location = 'view_args', required = True, validate = lambda x: x > 0, error_messages = {'validator_failed': 'Value must be greater than 0.'})
-    }
-    args = parser.parse(arguments)
     api_response = requests.get(f"{current_app.config['BRAVO_API_URI']}/sequence?variant_id={variant_id}&sample_no={sample_no}&heterozygous={sample_het}&index=0", headers = {'Range': request.headers['Range']}, stream = True)
     return Response(
        stream_with_context(api_response.iter_content(chunk_size = 1024)),
@@ -391,13 +392,8 @@ def variant_cram(variant_id, sample_het, sample_no):
 
 @bp.route('/variant/api/snv/crai/<string:variant_id>-<int:sample_het>-<int:sample_no>')
 @require_authorization
+@use_kwargs(variant_cram_argmap, location='view_args')
 def variant_crai(variant_id, sample_het, sample_no):
-    arguments = {
-       'variant_id': fields.Str(location = 'view_args', required = True, validate = lambda x: len(x) > 0, error_messages = {'validator_failed': 'Value must be a non-empty string.'}),
-       'sample_het': fields.Bool(location = 'view_args', required = True),
-       'sample_no': fields.Int(location = 'view_args', required = True, validate = lambda x: x > 0, error_messages = {'validator_failed': 'Value must be greater than 0.'})
-    }
-    args = parser.parse(arguments)
     api_response = requests.get(f"{current_app.config['BRAVO_API_URI']}/sequence?variant_id={variant_id}&sample_no={sample_no}&heterozygous={sample_het}&index=1", stream = True)
     return Response(
        stream_with_context(api_response.iter_content(chunk_size = 1024)),
@@ -415,49 +411,57 @@ def qc():
     return not_found(f'I couldn\'t find what you wanted')
 
 
+genes_argmap = {
+    'chrom': fields.Str(location = 'view_args', required = True, validate = lambda x: len(x) > 0, error_messages = {'validator_failed': 'Value must be a non-empty string.'}),
+    'start': fields.Int(location = 'view_args', required = True, validate = lambda x: x > 0, error_messages = {'validator_failed': 'Value must be greater than 0.'}),
+    'stop': fields.Int(location = 'view_args', required = True, validate = lambda x: x > 0, error_messages = {'validator_failed': 'Value must be greater than 0.'})
+}
+
+
 @bp.route('/genes/<string:chrom>-<int:start>-<int:stop>')
 @require_authorization
+@use_kwargs(genes_argmap, location='view_args')
 def genes(chrom, start, stop):
-    arguments = {
-       'chrom': fields.Str(location = 'view_args', required = True, validate = lambda x: len(x) > 0, error_messages = {'validator_failed': 'Value must be a non-empty string.'}),
-       'start': fields.Int(location = 'view_args', required = True, validate = lambda x: x > 0, error_messages = {'validator_failed': 'Value must be greater than 0.'}),
-       'stop': fields.Int(location = 'view_args', required = True, validate = lambda x: x > 0, error_messages = {'validator_failed': 'Value must be greater than 0.'})
-    }
-    args = parser.parse(arguments)
     api_response = requests.get(f"{current_app.config['BRAVO_API_URI']}/genes?chrom={chrom}&start={start}&stop={stop}&full=1", headers = { 'Accept-Encoding': 'gzip' })
     if api_response.status_code == 200:
         return make_response(api_response.content, 200)
     return not_found(f'I couldn\'t find what you wanted')
 
 
+genes_name_argmap = {
+    'name': fields.Str(location = 'view_args', required = True, validate = lambda x: len(x) > 0, error_messages = {'validator_failed': 'Value must be a non-empty string.'}),
+}
 @bp.route('/genes/api/<string:name>')
 @require_authorization
+@use_kwargs(genes_name_argmap, location='view_args')
 def genes_by_name(name):
-    arguments = {
-       'name': fields.Str(location = 'view_args', required = True, validate = lambda x: len(x) > 0, error_messages = {'validator_failed': 'Value must be a non-empty string.'}),
-    }
-    args = parser.parse(arguments)
     api_response = requests.get(f"{current_app.config['BRAVO_API_URI']}/genes?name={name}&full=1", headers = { 'Accept-Encoding': 'gzip' })
     if api_response.status_code == 200:
         return make_response(api_response.content, 200)
     return not_found(f'I couldn\'t find what you wanted')
 
 
+coverage_route_argmap = {
+    'chrom': fields.Str(location = 'view_args', required = True, validate = lambda x: len(x) > 0, error_messages = {'validator_failed': 'Value must be a non-empty string.'}),
+    'start': fields.Int(location = 'view_args', required = True, validate = lambda x: x > 0, error_messages = {'validator_failed': 'Value must be greater than 0.'}),
+    'stop': fields.Int(location = 'view_args', required = True, validate = lambda x: x > 0, error_messages = {'validator_failed': 'Value must be greater than 0.'})
+}
+
+coverage_json_argmap = {
+    'size': fields.Int(location = 'json', required = True, validate = lambda x: x > 0, error_messages = {'validation_failed': 'Value must be greater then 0'}),
+    'next': fields.Str(location = 'json', required = True, allow_none = True, validate = lambda x: len(x) > 0, error_message = {'validator_failed': 'Value must be a non-empty string.'})
+}
+
+
 @bp.route('/coverage/<string:chrom>-<int:start>-<int:stop>', methods = ['POST'])
 @require_authorization
-def coverage(chrom, start, stop):
-    arguments = {
-       'chrom': fields.Str(location = 'view_args', required = True, validate = lambda x: len(x) > 0, error_messages = {'validator_failed': 'Value must be a non-empty string.'}),
-       'start': fields.Int(location = 'view_args', required = True, validate = lambda x: x > 0, error_messages = {'validator_failed': 'Value must be greater than 0.'}),
-       'stop': fields.Int(location = 'view_args', required = True, validate = lambda x: x > 0, error_messages = {'validator_failed': 'Value must be greater than 0.'}),
-       'size': fields.Int(location = 'json', required = True, validate = lambda x: x > 0, error_messages = {'validation_failed': 'Value must be greater then 0'}),
-       'next': fields.Str(location = 'json', required = True, allow_none = True, validate = lambda x: len(x) > 0, error_message = {'validator_failed': 'Value must be a non-empty string.'})
-    }
-    args = parser.parse(arguments)
-    if args['next'] is not None:
-        url = f"{current_app.config['BRAVO_API_URI']}{args['next']}"
+@use_kwargs(coverage_route_argmap, location='view_args')
+@use_kwargs(coverage_json_argmap, location='json')
+def coverage(chrom, start, stop, size, next):
+    if next is not None:
+        url = f"{current_app.config['BRAVO_API_URI']}{next}"
     else:
-        url = f"{current_app.config['BRAVO_API_URI']}/coverage?chrom={chrom}&start={start}&stop={stop}&limit={args['size']}"
+        url = f"{current_app.config['BRAVO_API_URI']}/coverage?chrom={chrom}&start={start}&stop={stop}&limit={size}"
     api_response = requests.get(url, headers = { 'Accept-Encoding': 'gzip' })
     if api_response.status_code == 200:
         payload = api_response.json()
@@ -471,13 +475,9 @@ def coverage(chrom, start, stop):
     return not_found(f'I coudn\'t find what you wanted')
 
 
-#@bp.route('/variants/<string:feature_type>/<string:variants_type>', methods = ['POST', 'GET'])
-#@require_authorization
-#def variants_meta(feature_type, variants_type):
 @bp.route('/variants/<string:variants_type>', methods = ['POST', 'GET'])
 @require_authorization
 def variants_meta(variants_type):
-    #url = f"{current_app.config['BRAVO_API_URI']}/{feature_type}/{variants_type}/filters"
     url = f"{current_app.config['BRAVO_API_URI']}/{variants_type}/filters"
     api_response = requests.get(url)
     if api_response.status_code == 200:
