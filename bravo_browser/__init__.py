@@ -3,7 +3,7 @@ from os import getenv
 
 
 def create_app(test_config=None):
-    instance_path = getenv('BRAVO_UI_INSTANCE_DIR', 'instance')
+    instance_path = getenv('BRAVO_UI_INSTANCE_DIR', None)
     app = Flask(__name__,
                 instance_relative_config=True,
                 instance_path=instance_path)
