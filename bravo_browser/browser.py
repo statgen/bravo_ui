@@ -1,4 +1,6 @@
-from flask import current_app, Blueprint, request, jsonify, make_response, Response, abort, render_template, redirect, url_for, session, send_file, stream_with_context
+from flask import (
+    current_app, Blueprint, request, jsonify, make_response, Response, abort, render_template,
+    redirect, url_for, session, send_file, stream_with_context, send_from_directory)
 from flask_cors import CORS
 from flask_compress import Compress
 from flask_login import LoginManager, UserMixin, current_user, login_user, logout_user
@@ -12,8 +14,6 @@ import re
 import json
 import urllib.parse
 from bravo_browser.models import users, feedbacks
-
-import pdb
 
 bp = Blueprint('browser', __name__, template_folder='templates', static_folder='static')
 CORS(bp)
@@ -59,6 +59,13 @@ def require_authorization(func):
                 return redirect(url_for('.terms'))
         return func(*args, **kwargs)
     return authorization_wrapper
+
+
+@bp.route('/favicon')
+@bp.route('/favicon.ico')
+def favicon():
+    return send_from_directory(bp.static_folder, 'favicon.ico', mimetype='image/vnd.microsoft.icon')
+
 
 
 @bp.route('/oauth2callback', methods = ['GET', 'POST'])
