@@ -59,7 +59,7 @@ BRAVO
          <p class="text-center"><strong>This page is under active development and will be available soon.</strong></p>
          {% else %}
          <div id="bravo-plot"> 
-            <bravoregion :pagination-size="100" :homepage="'{{ url_for('.home', _external = True, _scheme='https') }}'" :api="'{{ url_for('.home', _external = True, _scheme='https') }}'" :gene_name = "'{{ gene_name }}'"></bravoregion>
+            <bravoregion :pagination-size="100" :homepage="'{{ url_for('.home', _external = True) }}'" :api="'{{ url_for('.home', _external = True) }}'" :gene_name = "'{{ gene_name }}'"></bravoregion>
          </div>
          {% endif %}
       </div>
