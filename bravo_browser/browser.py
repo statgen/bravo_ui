@@ -387,7 +387,9 @@ variant_cram_argmap = {
 @require_authorization
 @use_kwargs(variant_cram_argmap, location='view_args')
 def variant_cram(variant_id, sample_het, sample_no):
-    api_response = requests.get(f"{current_app.config['BRAVO_API_URI']}/sequence?variant_id={variant_id}&sample_no={sample_no}&heterozygous={sample_het}&index=0", headers = {'Range': request.headers['Range']}, stream = True)
+    request_str = (f"{current_app.config['BRAVO_API_URI']}/sequence?variant_id={variant_id}"
+                   f"&sample_no={sample_no}&heterozygous={sample_het}&index=0")
+    api_response = requests.get(request_str, headers = {'Range': request.headers['Range']}, stream = True)
     return Response(
        stream_with_context(api_response.iter_content(chunk_size = 1024)),
        status = api_response.status_code,
@@ -401,7 +403,10 @@ def variant_cram(variant_id, sample_het, sample_no):
 @require_authorization
 @use_kwargs(variant_cram_argmap, location='view_args')
 def variant_crai(variant_id, sample_het, sample_no):
-    api_response = requests.get(f"{current_app.config['BRAVO_API_URI']}/sequence?variant_id={variant_id}&sample_no={sample_no}&heterozygous={sample_het}&index=1", stream = True)
+    request_str = (f"{current_app.config['BRAVO_API_URI']}/sequence?"
+                   f"variant_id={variant_id}&sample_no={sample_no}&heterozygous={sample_het}"
+                   f"&index=1")
+    api_response = requests.get(request_str, stream = True)
     return Response(
        stream_with_context(api_response.iter_content(chunk_size = 1024)),
        status = api_response.status_code,
